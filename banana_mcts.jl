@@ -17,8 +17,6 @@ dict_file = "3000_common_words.txt"
 dictionary = load_word_list(dict_file)
 BANK_MAX = 8
 BUNCH_TOT = 40
-bunch = random_bunch_arr(BUNCH_TOT)
-bunch_dict = convert_bunch_type(bunch, format="dict")
 
 # Reward values
 turn_penalty = -1
@@ -35,7 +33,8 @@ bananagrams = QuickMDP(
 
     isterminal = function (s)
         if length(find_playable_word_list(s.tiles, s.letter_bank, s.occupied, dictionary)) == 0
-            if length(s.letter_bank) == BANK_MAX || length(bunch) == 0
+            if ((length(s.letter_bank) == BANK_MAX) || (length(s.bunch) == 0))
+                println("IS TERMINAL")
                 return true
             end
         end
@@ -44,28 +43,28 @@ bananagrams = QuickMDP(
 
     actions = function (s)
         actions = find_playable_word_list(s.tiles, s.letter_bank, s.occupied, dictionary)
-        if length(s.letter_bank) < BANK_MAX && length(bunch) > 0
+        if length(s.letter_bank) < BANK_MAX && length(s.bunch) > 0
             push!(actions, nothing)  # nothing = draw a tile
         end
         return actions
     end,
 
     transition = function (s, a)
-        if a == nothing   # draw tile from bunch and add to bank
-            sp = State(s.tiles, s.letter_bank, s.occupied)
-            tile = rand(bunch)
-            deleteat!(bunch, findfirst(x->x==tile, bunch))
-            push!(sp.letter_bank, tile)
+        if a === nothing   # draw tile from bunch and add to bank
+            sp = State(s.tiles, s.letter_bank, s.occupied, s.bunch)
+            new_tile = rand(s.bunch)
+            deleteat!(sp.bunch, findfirst(x->x==new_tile, sp.bunch))
+            push!(sp.letter_bank, new_tile)
         else
-            sp = play_on_board(a.partial_word, a.parent_index, a.direction, s.tiles, s.letter_bank, s.occupied)
+            sp = play_on_board(a.partial_word, a.parent_index, a.direction, s)
         end
         return sp
     end,
 
     reward = function (s, a, sp)
         r = turn_penalty
-        if is_terminal(sp, dictionary, BANK_MAX, bunch)
-            num_leftover = length(sp.letter_bank) + length(bunch)
+        if is_terminal(sp, dictionary, BANK_MAX)
+            num_leftover = length(sp.letter_bank) + length(sp.bunch)
             if num_leftover == 0
                 r += none_left_reward
             else
@@ -75,7 +74,7 @@ bananagrams = QuickMDP(
         return r
     end,
 
-    initialstate = Deterministic(init_state(bunch_dict, dictionary, BUNCH_TOT)),
+    initialstate = Deterministic(init_state(dictionary, BUNCH_TOT)),
 )
 
 
@@ -104,6 +103,10 @@ function simulate!(π::MonteCarloTreeSearch, s, d=π.d)
     end
     𝒫, N, Q, c = π.𝒫, π.N, π.Q, π.c
     𝒜, γ = actions(𝒫, s), discount(𝒫)
+    if isterminal(𝒫, s)
+        println("SIM is terminal")
+        return π.U(π.𝒫, s)
+    end
     if !haskey(N, (s, first(𝒜)))
         for a in 𝒜
             N[(s,a)] = 0
@@ -122,6 +125,10 @@ end
 
 function (π::MonteCarloTreeSearch)(s)
     for k in 1:π.m
+        println("Simulation ", k)
+        println("num tiles: ", length(s.tiles))
+        println("num bank: ", length(s.letter_bank))
+        println("num bunch: ", length(s.bunch))
         simulate!(π, s)
     end
     return argmax(a->π.Q[(s,a)], actions(π.𝒫, s))
@@ -130,6 +137,7 @@ end
 # Value estimate from random rollout
 function rand_rollout(𝒫::QuickMDP, s)
     if isterminal(𝒫, s)
+        println("ROLLOUT is terminal")
         return 0
     end
     𝒜, γ = actions(𝒫, s), discount(𝒫)
@@ -141,30 +149,30 @@ function rand_rollout(𝒫::QuickMDP, s)
     return q
 end
 
-N = Dict{Tuple{State, Union{Action, Nothing}}, Int}()
-Q = Dict{Tuple{State, Union{Action, Nothing}}, Float64}()
-d = 5
-m = 100
-c = 100    # d, m, c values used in textbook example
+function main()
+    N = Dict{Tuple{State, Union{Action, Nothing}}, Int}()
+    Q = Dict{Tuple{State, Union{Action, Nothing}}, Float64}()
+    d = 5
+    m = 100
+    c = 100    # d, m, c values used in textbook example
 
-π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, rand_rollout)
+    π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, rand_rollout)
 
-init_tiles = Vector{Tile}()
-init_bank = Vector{Char}()
-init_occupied = Set{Tuple{Int, Int}}()
-while true
-    init_tiles, init_bank, init_occupied = init_board(bunch_dict, dictionary)
-    if !isnothing(init_tiles)
-        break
+    s = init_state(dictionary, BUNCH_TOT)
+    println("initial state: ", s)
+
+    while !isterminal(π.𝒫, s)
+        println("MAIN state: ", s)
+        a = π(s)   # action to take accord to MCTS
+        sp = transition(π.𝒫, s, a)
+        println(sp)
+        s = sp
     end
-end
-s = State(init_tiles, init_bank, init_occupied)
-while !isterminal(π.𝒫, s)
-    a = π(s)   # action to take accord to MCTS
-    transition(π.𝒫, s, a)
+
+    see_board(s.tiles, s.letter_bank, save=true)
 end
 
-see_board(s.tiles, s.letter_bank, save=true)
+main()
 
 
 # # POMDPs API: https://juliapomdp.github.io/POMDPs.jl/latest/api/#API-Documentation
