@@ -1,10 +1,16 @@
-using Printf, Random
+using Printf, Random.Random
+# Random.seed!(1234);
+# rng = Random.default_rng(0)
+# rng = Random.GLOBAL_RNG
+# rng = MersenneTwister(0)
+# rng = RandomDevice()
+# rng = AbstractRNG
+# println(typeof(rng))
 using POMDPs, POMDPTools
 using QuickPOMDPs: QuickMDP
 
 include("Bananagrams.jl")
 using .Bananagrams
-
 
 # Global variables
 dict_file = "3000_common_words.txt"
@@ -30,7 +36,7 @@ bananagrams = QuickMDP(
     isterminal = function (s)
         if length(find_playable_word_list(s.tiles, s.letter_bank, s.occupied, dictionary)) == 0
             if length(s.letter_bank) == BANK_MAX || length(bunch) == 0
-                return True
+                return true
             end
         end
         return false
@@ -46,19 +52,20 @@ bananagrams = QuickMDP(
 
     transition = function (s, a)
         if a == nothing   # draw tile from bunch and add to bank
+            sp = State(s.tiles, s.letter_bank, s.occupied)
             tile = rand(bunch)
             deleteat!(bunch, findfirst(x->x==tile, bunch))
-            push!(s.letter_bank, tile)
+            push!(sp.letter_bank, tile)
         else
-            play_on_board(a.partial_word, a.parent_index, a.direction, s.tiles, s.letter_bank, s.occupied)
+            sp = play_on_board(a.partial_word, a.parent_index, a.direction, s.tiles, s.letter_bank, s.occupied)
         end
-        return s
+        return sp
     end,
 
     reward = function (s, a, sp)
         r = turn_penalty
-        if isterminal(sp)
-            num_leftover = length(bank) + length(bunch)
+        if is_terminal(sp, dictionary, BANK_MAX, bunch)
+            num_leftover = length(sp.letter_bank) + length(bunch)
             if num_leftover == 0
                 r += none_left_reward
             else
@@ -93,7 +100,7 @@ end
 
 function simulate!(π::MonteCarloTreeSearch, s, d=π.d)
     if d <= 0
-        return π.U(s)
+        return π.U(π.𝒫, s)
     end
     𝒫, N, Q, c = π.𝒫, π.N, π.Q, π.c
     𝒜, γ = actions(𝒫, s), discount(𝒫)
@@ -102,7 +109,7 @@ function simulate!(π::MonteCarloTreeSearch, s, d=π.d)
             N[(s,a)] = 0
             Q[(s,a)] = 0.0
         end
-        return π.U(s)
+        return π.U(π.𝒫, s)
     end
     a = explore(π, s)
     sp = transition(𝒫, s, a)
@@ -121,19 +128,26 @@ function (π::MonteCarloTreeSearch)(s)
 end
 
 # Value estimate from random rollout
-function U(s)
-    sim = RolloutSimulator(rng=Random.default_rng())
-    policy = RandomPolicy(bananagrams)             # generates actions at each state and randomly chooses one
-    return simulate(sim, bananagrams, policy, s)   # returns reward from rollout from state s; ends when isterminal is true
+function rand_rollout(𝒫::QuickMDP, s)
+    if isterminal(𝒫, s)
+        return 0
+    end
+    𝒜, γ = actions(𝒫, s), discount(𝒫)
+    num_actions = length(𝒜)
+    a = 𝒜[rand(1:num_actions)]
+    sp = transition(𝒫, s, a)
+    r = reward(𝒫, s, a, sp)
+    q = r + γ*rand_rollout(𝒫, sp)
+    return q
 end
 
 N = Dict{Tuple{State, Union{Action, Nothing}}, Int}()
 Q = Dict{Tuple{State, Union{Action, Nothing}}, Float64}()
-d = 10
+d = 5
 m = 100
 c = 100    # d, m, c values used in textbook example
 
-π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, U)
+π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, rand_rollout)
 
 init_tiles = Vector{Tile}()
 init_bank = Vector{Char}()

@@ -5,7 +5,7 @@ using Parameters, Multisets
 using Graphs, GraphPlot, Plots
 
 export Tile, State, Action
-export load_word_list, random_bunch_arr, convert_bunch_type, find_playable_word_list, play_on_board, init_board, init_state, see_board
+export load_word_list, random_bunch_arr, convert_bunch_type, find_playable_word_list, play_on_board, init_board, init_state, is_terminal, see_board
 
 ##############################
 # CUSTOM STRUCTS
@@ -245,11 +245,15 @@ function find_playable_word_list(tiles::Vector{Tile}, letter_bank::Vector{Char},
     return playable_word_list
 end
 
-function play_on_board(partial_word::String, parent::Int, dir_symbol::Symbol, tiles::Vector{Tile}, letter_bank::Vector{Char}, occupied::Set{Tuple{Int, Int}})
+function play_on_board(partial_word::String, parent::Int, dir_symbol::Symbol, tiles_i::Vector{Tile}, letter_bank_i::Vector{Char}, occupied_i::Set{Tuple{Int, Int}})
     """
     Adds word to board, changing tiles, letter_bank, and occupied
     Assumes that the letters of partial_word exist in letter_bank
     """
+    tiles = copy(tiles_i)
+    letter_bank = copy(letter_bank_i)
+    occupied = copy(occupied_i)
+
     prev = parent
     for letter in partial_word
         prev_tile = tiles[prev]
@@ -293,6 +297,7 @@ function play_on_board(partial_word::String, parent::Int, dir_symbol::Symbol, ti
 
         prev = curr
     end
+    return State(tiles, letter_bank, occupied)
 end
 
 function init_board(bunch::Dict{Char, Int}, valid_dictionary, num_tiles=10)
@@ -344,7 +349,10 @@ function init_board(bunch::Dict{Char, Int}, valid_dictionary, num_tiles=10)
         end
 
         # Play the partial word on the board
-        play_on_board(playable_word.partial_word, playable_word.parent_index, playable_word.direction, tiles, letter_bank, occupied)
+        sp = play_on_board(playable_word.partial_word, playable_word.parent_index, playable_word.direction, tiles, letter_bank, occupied)
+        tiles = sp.tiles
+        letter_bank = sp.letter_bank
+        occupied = sp.occupied
         n += length(playable_word.partial_word)
     end
 
@@ -371,6 +379,15 @@ function init_state(bunch_dict::Dict{Char, Int}, dictionary, BUNCH_TOT::Int=35, 
         bunch_dict = convert_bunch_type(bunch, format="dict")
     end
     return State(init_tiles, init_bank, init_occupied)
+end
+
+function is_terminal(s::State, dictionary, BANK_MAX, bunch)
+    if length(find_playable_word_list(s.tiles, s.letter_bank, s.occupied, dictionary)) == 0
+        if length(s.letter_bank) == BANK_MAX || length(bunch) == 0
+            return true
+        end
+    end
+    return false
 end
 
 function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
