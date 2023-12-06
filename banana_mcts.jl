@@ -1,6 +1,6 @@
-using Printf
+using Printf, Random
 using POMDPs, POMDPTools
-using QuickPOMDPs: QuickPOMDP
+using QuickPOMDPs: QuickMDP
 
 include("Bananagrams.jl")
 using .Bananagrams
@@ -11,7 +11,8 @@ dict_file = "3000_common_words.txt"
 dictionary = load_word_list(dict_file)
 BANK_MAX = 8
 BUNCH_TOT = 40
-bunch = random_bunch(BUNCH_TOT, format="array")
+bunch = random_bunch_arr(BUNCH_TOT)
+bunch_dict = convert_bunch_type(bunch, format="dict")
 
 # Reward values
 turn_penalty = -1
@@ -20,10 +21,10 @@ none_left_reward = 100
 
 
 # Define bananagrams MDP
-bananagrams = QuickPOMDP(
+bananagrams = QuickMDP(
     statetype = State,
-    actiontype = Action,
-    obstype = State,   # no obs in MDP, just to prevent getting a warning
+    actiontype = Union{Action, Nothing},
+    # obstype = State,   # no obs in MDP, just to prevent getting a warning
     discount = 0.95,
 
     isterminal = function (s)
@@ -32,12 +33,12 @@ bananagrams = QuickPOMDP(
                 return True
             end
         end
-        return False
+        return false
     end,
 
     actions = function (s)
         actions = find_playable_word_list(s.tiles, s.letter_bank, s.occupied, dictionary)
-        if length(s.letter_bank) < BANK_MAX
+        if length(s.letter_bank) < BANK_MAX && length(bunch) > 0
             push!(actions, nothing)  # nothing = draw a tile
         end
         return actions
@@ -67,7 +68,7 @@ bananagrams = QuickPOMDP(
         return r
     end,
 
-    initialstate = init_state(),   # maybe not needed?
+    initialstate = Deterministic(init_state(bunch_dict, dictionary, BUNCH_TOT)),
 )
 
 
@@ -121,25 +122,35 @@ end
 
 # Value estimate from random rollout
 function U(s)
-    sim = RolloutSimulator()
-    policy = RandomPolicy(mdp)                  # generates actions at each state and randomly chooses one
-    return simulate(sim, bananagrams, policy)   # returns reward from rollout with specified policy; ends when isterminal is True
+    sim = RolloutSimulator(rng=Random.default_rng())
+    policy = RandomPolicy(bananagrams)             # generates actions at each state and randomly chooses one
+    return simulate(sim, bananagrams, policy, s)   # returns reward from rollout from state s; ends when isterminal is true
 end
 
-N = Dict{Tuple{State, Action}, Int}()
-Q = Dict{Tuple{State, Action}, Float64}()
+N = Dict{Tuple{State, Union{Action, Nothing}}, Int}()
+Q = Dict{Tuple{State, Union{Action, Nothing}}, Float64}()
 d = 10
 m = 100
 c = 100    # d, m, c values used in textbook example
 
 π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, U)
 
-s = init_state()
-while !isterminal(π.𝒫, s):
+init_tiles = Vector{Tile}()
+init_bank = Vector{Char}()
+init_occupied = Set{Tuple{Int, Int}}()
+while true
+    init_tiles, init_bank, init_occupied = init_board(bunch_dict, dictionary)
+    if !isnothing(init_tiles)
+        break
+    end
+end
+s = State(init_tiles, init_bank, init_occupied)
+while !isterminal(π.𝒫, s)
     a = π(s)   # action to take accord to MCTS
     transition(π.𝒫, s, a)
 end
 
+see_board(s.tiles, s.letter_bank, save=true)
 
 
 # # POMDPs API: https://juliapomdp.github.io/POMDPs.jl/latest/api/#API-Documentation

@@ -5,7 +5,7 @@ using Parameters, Multisets
 using Graphs, GraphPlot, Plots
 
 export Tile, State, Action
-export load_word_list, random_bunch, find_playable_word_list, play_on_board, init_state, see_board
+export load_word_list, random_bunch_arr, convert_bunch_type, find_playable_word_list, play_on_board, init_board, init_state, see_board
 
 ##############################
 # CUSTOM STRUCTS
@@ -22,8 +22,8 @@ Tile(letter::Char, pos::Tuple{Int, Int}) = Tile(letter, pos, 0, 0, 0, 0)
 
 mutable struct State
     tiles::Vector{Tile}
-    occupied::Set{Tuple{Int, Int}}
     letter_bank::Vector{Char}
+    occupied::Set{Tuple{Int, Int}}
 end
 struct Action
     partial_word::String
@@ -45,21 +45,6 @@ bananagrams_distribution = Dict(
     'U' => 6, 'V' => 3, 'W' => 3, 'X' => 2, 'Y' => 3,
     'Z' => 2
 )
-
-function random_bunch_arr(num_tiles::Int=35)
-    """ 
-    Creates an array of random chars using the frequency defined in bananagrams_distribution
-    Produces different result every time it's run
-    """
-    # Create a pool of letters
-    pool = [repeat([k], v) for (k, v) in bananagrams_distribution]
-    pool = collect(Iterators.flatten(pool))
-
-    # Randomly select 35 letters from the pool
-    chosen_letters = rand(pool, num_tiles)
-    sort!(chosen_letters)
-    return chosen_letters
-end
 
 function opposite_dir(dir_symbol::Symbol) ::Symbol
     """
@@ -193,14 +178,26 @@ function load_word_list(file_path) ::Set{String}
     return valid_dictionary
 end
 
-function random_bunch(num_tiles::Int=35; format::String="dict")
+function random_bunch_arr(num_tiles::Int=35) ::Vector{Char}
+    """ 
+    Creates an array of random chars using the frequency defined in bananagrams_distribution
+    Produces different result every time it's run
+    """
+    # Create a pool of letters
+    pool = [repeat([k], v) for (k, v) in bananagrams_distribution]
+    pool = collect(Iterators.flatten(pool))
+
+    # Randomly select 35 letters from the pool
+    chosen_letters = rand(pool, num_tiles)
+    sort!(chosen_letters)
+    return chosen_letters
+end
+
+function convert_bunch_type(bunch_arr::Vector{Char}; format::String="dict")
     """ 
     Make a random bunch represented as a dictionary with keys of all letters and their counts 
     """
     ASCII_zero = 64    # letter 'A' is 65
-
-    # get an array of num_tiles random letters from original Bananagrams districution
-    bunch_arr = random_bunch_arr(num_tiles)
 
     # make a dictionary with all the letters and fill with the ones drawn
     bunch_dict = Dict{Char, Int}()
@@ -224,7 +221,7 @@ function random_bunch(num_tiles::Int=35; format::String="dict")
     end
 end
 
-function find_playable_word_list(tiles::Vector{Tile}, letter_bank::Vector{Char}, occupied::Set{Tuple{Int, Int}}, dictionary::Set{String}) ::Vector{Action}
+function find_playable_word_list(tiles::Vector{Tile}, letter_bank::Vector{Char}, occupied::Set{Tuple{Int, Int}}, dictionary::Set{String}) ::Vector{Union{Action, Nothing}}
     """
     Outputs (partial) words that can be played along with their positions
     """
@@ -296,6 +293,84 @@ function play_on_board(partial_word::String, parent::Int, dir_symbol::Symbol, ti
 
         prev = curr
     end
+end
+
+function init_board(bunch::Dict{Char, Int}, valid_dictionary, num_tiles=10)
+    """ 
+    Create a num_tiles-letter crossword to start the game
+    Returns tiles, letter_bank, occupied
+    """
+    # Initialize
+    tiles = Vector{Tile}()
+    occupied = Set{Tuple{Int, Int}}()
+    letter_bank= Vector{Char}()
+
+    # Temporarily set letter_bank to reflect the entire bunch in order to use the functions
+    letter_bank = [k for (k, v) in bunch if v > 0]
+
+    # Choose a random letter from the bunch and play it at (0, 0)
+    first_letter = rand(letter_bank)
+    println(first_letter)
+    new_tile = Tile(first_letter, (0, 0))
+    push!(tiles, new_tile)
+    push!(occupied, (0, 0))
+
+    # Remove one instance of the letter from the bank
+    index_to_remove = findfirst(x -> x == first_letter, letter_bank)
+    if index_to_remove !== nothing
+        deleteat!(letter_bank, index_to_remove)
+    end
+
+    # Until you have played num_tiles, play words
+    n = 1
+    playable_word = Action("", 1, :right)
+    while n < num_tiles
+        # Find playable words
+        playable_word_list = find_playable_word_list(tiles, letter_bank, occupied, valid_dictionary)
+        if isempty(playable_word_list)
+            println("no words found!")
+            return nothing, nothing, nothing
+        end
+
+        # Find a playable word that fits within num_tiles limit
+        for (i, word) in enumerate(playable_word_list)
+            playable_word = word
+            if (n+length(playable_word.partial_word) <= num_tiles)
+                break
+            elseif (n+length(playable_word.partial_word) > num_tiles && i==length(playable_word_list))
+                println("words too long!")
+                return nothing, nothing, nothing
+            end
+        end
+
+        # Play the partial word on the board
+        play_on_board(playable_word.partial_word, playable_word.parent_index, playable_word.direction, tiles, letter_bank, occupied)
+        n += length(playable_word.partial_word)
+    end
+
+    # Remove all played letters from the bunch
+    for tile in tiles
+        bunch[tile.letter] -= 1
+    end
+    # Reset the letter bank
+    empty!(letter_bank)
+
+    return tiles, letter_bank, occupied
+end
+
+function init_state(bunch_dict::Dict{Char, Int}, dictionary, BUNCH_TOT::Int=35, num_tiles=10)
+    init_tiles = nothing
+    init_bank = nothing
+    init_occupied = nothing
+    while true
+        init_tiles, init_bank, init_occupied = init_board(bunch_dict, dictionary, num_tiles)
+        if !isnothing(init_tiles)
+            break
+        end
+        bunch = random_bunch_arr(BUNCH_TOT)
+        bunch_dict = convert_bunch_type(bunch, format="dict")
+    end
+    return State(init_tiles, init_bank, init_occupied)
 end
 
 function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
@@ -375,8 +450,6 @@ function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
         savefig(joinpath(folder_path, "board_$timestamp.png"))
     end
 end
-
-# TODO: add init_state function
 
 
 end
