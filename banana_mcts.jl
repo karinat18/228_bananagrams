@@ -1,17 +1,17 @@
 using Printf
-include("Bananagrams.jl")
-using .Bananagrams
-using Graphs, GraphPlot, Plots
-using Parameters, Multisets
 using POMDPs, POMDPTools
 using QuickPOMDPs: QuickPOMDP
+
+include("Bananagrams.jl")
+using .Bananagrams
+
 
 # Global variables
 dict_file = "3000_common_words.txt"
 dictionary = load_word_list(dict_file)
-bunch = Vector{Char}
 BANK_MAX = 8
 BUNCH_TOT = 40
+bunch = random_bunch(BUNCH_TOT, format="array")
 
 # Reward values
 turn_penalty = -1
@@ -141,5 +141,25 @@ while !isterminal(π.𝒫, s):
 end
 
 
+
+# # POMDPs API: https://juliapomdp.github.io/POMDPs.jl/latest/api/#API-Documentation
 # println("γ: ", discount(bananagrams))   # usage test
-# POMDPs API: https://juliapomdp.github.io/POMDPs.jl/latest/api/#API-Documentation
+# println("Bunch: ", bunch)
+
+# # Test board visualization: 
+# # NOTE: saving .png file works but board does not pop up when display() is called
+# my_tiles = Vector{Tile}()
+# S_tile = Tile('S', (1,3), 0, 4, 0, 2)
+# I_tile = Tile('I', (2,3), 0, 0, 1, 3)
+# T_tile = Tile('T', (3,3), 0, 0, 2, 0)
+# P_tile = Tile('P', (1,2), 1, 5, 0, 0)
+# A_tile = Tile('A', (1,1), 4, 0, 0, 0)
+# push!(my_tiles, S_tile)
+# push!(my_tiles, I_tile)
+# push!(my_tiles, T_tile)
+# push!(my_tiles, P_tile)
+# push!(my_tiles, A_tile)
+# occupied = Set{Tuple{Int, Int}}([(1,1), (1,2), (1,3), (2,3), (3,3)])
+# my_bank = ['C', 'R', 'T', 'S', 'A', 'G']
+# test_state = State(my_tiles, occupied, my_bank)
+# see_board(my_tiles, my_bank, save=true)

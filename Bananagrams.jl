@@ -1,13 +1,15 @@
 module Bananagrams
 
-using Printf
-using Graphs, GraphPlot, Plots
+using Printf, Dates
 using Parameters, Multisets
+using Graphs, GraphPlot, Plots
 
 export Tile, State, Action
-export load_word_list, find_playable_word_list, play_on_board, init_state
+export load_word_list, random_bunch, find_playable_word_list, play_on_board, init_state, see_board
 
-# CUSTOM STRUCTS #############################
+##############################
+# CUSTOM STRUCTS
+##############################
 mutable struct Tile
     letter::Char
     pos::Tuple{Int, Int}
@@ -28,10 +30,37 @@ struct Action
     parent_index::Int
     direction::Symbol
 end
-##############################################
 
 
-# HELPER FUNCTIONS ###########################
+##############################
+# HELPER FUNCTIONS
+##############################
+
+# Actual bananagrams game tile counts
+bananagrams_distribution = Dict(
+    'A' => 13, 'B' => 3, 'C' => 3, 'D' => 6, 'E' => 18,
+    'F' => 3, 'G' => 4, 'H' => 3, 'I' => 12, 'J' => 2,
+    'K' => 2, 'L' => 5, 'M' => 3, 'N' => 8, 'O' => 11,
+    'P' => 3, 'Q' => 2, 'R' => 9, 'S' => 6, 'T' => 9,
+    'U' => 6, 'V' => 3, 'W' => 3, 'X' => 2, 'Y' => 3,
+    'Z' => 2
+)
+
+function random_bunch_arr(num_tiles::Int=35)
+    """ 
+    Creates an array of random chars using the frequency defined in bananagrams_distribution
+    Produces different result every time it's run
+    """
+    # Create a pool of letters
+    pool = [repeat([k], v) for (k, v) in bananagrams_distribution]
+    pool = collect(Iterators.flatten(pool))
+
+    # Randomly select 35 letters from the pool
+    chosen_letters = rand(pool, num_tiles)
+    sort!(chosen_letters)
+    return chosen_letters
+end
+
 function opposite_dir(dir_symbol::Symbol) ::Symbol
     """
     Get opposing directions
@@ -140,10 +169,10 @@ function construct_playable_word(candidate::String, tile::Tile, tiles::Vector{Ti
     return Action(partial_word, parent, direction)
 end
 
-##############################################
 
-
-# BANANAGRAMS FUNCTIONS ######################
+##############################
+# EXPORTED FUNCTIONS
+##############################
 function load_word_list(file_path) ::Set{String}
     """
     Input: file path to list of 3000 most common English words
@@ -162,6 +191,37 @@ function load_word_list(file_path) ::Set{String}
         end
     end
     return valid_dictionary
+end
+
+function random_bunch(num_tiles::Int=35; format::String="dict")
+    """ 
+    Make a random bunch represented as a dictionary with keys of all letters and their counts 
+    """
+    ASCII_zero = 64    # letter 'A' is 65
+
+    # get an array of num_tiles random letters from original Bananagrams districution
+    bunch_arr = random_bunch_arr(num_tiles)
+
+    # make a dictionary with all the letters and fill with the ones drawn
+    bunch_dict = Dict{Char, Int}()
+    for i in 1:26
+        bunch_dict[Char(ASCII_zero+i)] = 0
+    end
+    for c in bunch_arr
+        bunch_dict[c] += 1
+    end
+
+    # different output formats
+    if format == "array"
+        return bunch_arr
+    elseif format == "string"
+        return join(bunch_arr)
+    elseif format == "dict"
+        return bunch_dict
+    else
+        println("Format must be array, string, or dict")
+        return
+    end
 end
 
 function find_playable_word_list(tiles::Vector{Tile}, letter_bank::Vector{Char}, occupied::Set{Tuple{Int, Int}}, dictionary::Set{String}) ::Vector{Action}
@@ -192,7 +252,6 @@ function play_on_board(partial_word::String, parent::Int, dir_symbol::Symbol, ti
     """
     Adds word to board, changing tiles, letter_bank, and occupied
     Assumes that the letters of partial_word exist in letter_bank
-    Note: does not increment number of turns taken
     """
     prev = parent
     for letter in partial_word
@@ -239,7 +298,85 @@ function play_on_board(partial_word::String, parent::Int, dir_symbol::Symbol, ti
     end
 end
 
+function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
+    """
+    Visualize (and save .png of) the board and letter bank
+    """
+    # Flag for an non-empty bank
+    has_bank = false
+    if length(letter_bank) > 0
+        has_bank = true
+    end
+
+    # Extract positions from Tile struct for plotting
+    board_pos = [(tile.pos[1], tile.pos[2]) for tile in tiles]
+    board_xs, board_ys = collect(first.(board_pos)), collect(last.(board_pos))
+
+    max_x=0
+    max_y=0
+    if has_bank
+        # Plot letter_bank above board
+        bank_pos = [(minimum(board_xs)+i-1, maximum(board_ys)+1.5) for i in 1:length(letter_bank)]
+        bank_xs, bank_ys = collect(first.(bank_pos)), collect(last.(bank_pos))
+        # Value limits
+        max_x = max(maximum(board_xs), maximum(bank_xs))
+        max_y = maximum(bank_ys)
+    else
+        max_x = maximum(board_xs)
+        max_y = maximum(board_ys)
+    end
+
+    # Scale markersize to fill 1 axis unit
+    buffer = 0.5
+    markersize_in_units = 0.5
+    x_range = (max_x-minimum(board_xs))
+    y_range = (max_y-minimum(board_ys))
+    x_pixels_per_unit = 525 / (x_range + 2*buffer)  # default plot size is (600, 400)
+    y_pixels_per_unit = 325 / (y_range + 2*buffer)
+    markersize_pixels = markersize_in_units * min(x_pixels_per_unit, y_pixels_per_unit)
+
+    # Plot (can add axis=([], false) to remove axis labels and grid)
+    scatter(board_xs, board_ys, ratio=1, label="",
+    shape=:square, markersize=markersize_pixels, color=:black)
+    if has_bank
+        scatter!(bank_xs, bank_ys, ratio=1, label="",
+        shape=:square, markersize=markersize_pixels, color=:royalblue, markerstrokecolor=:royalblue)
+        plot!([minimum(board_xs)-buffer, max_x+buffer], [max_y-0.75, max_y-0.75], ls=:dash, lw=2, lc=:royalblue, legend=false)
+    end
+        plot!()
+
+    # Add tile labels
+    for tile in tiles
+        annotate!(tile.pos[1], tile.pos[2], text(tile.letter, 14, :white, :center))
+    end
+    if has_bank
+        for i in 1:length(letter_bank)
+            annotate!(bank_pos[i][1], bank_pos[i][2], text(letter_bank[i], 14, :white, :center))
+        end
+    end
+
+    # Set axis limits with buffer to not cut off marker
+    xlims!(minimum(board_xs) - buffer, max_x + buffer)
+    ylims!(minimum(board_ys) - buffer, max_y + buffer)
+
+    # Customize plot appearance (optional)
+    title!("Bananagrams Bank and Board")
+
+    # Display the plot
+    display(Plots.plot!())  # Note: Plots.plot!() returns the current plot
+
+    # Save the plot to a PNG file with a timestamp
+    if save
+        timestamp = Dates.format(now(), "mmdd_HHMM_SS")
+        folder_path = "boards"
+        if !isdir(folder_path)
+            mkdir(folder_path)
+        end
+        savefig(joinpath(folder_path, "board_$timestamp.png"))
+    end
+end
+
 # TODO: add init_state function
-##############################################
+
 
 end
