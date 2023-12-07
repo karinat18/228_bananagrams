@@ -467,7 +467,7 @@ function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
 
     # Save the plot to a PNG file with a timestamp
     if save
-        timestamp = Dates.format(now(), "mmdd_HHMM_SS")
+        timestamp = Dates.format(now(), "mmdd_HHMM_SS_SSS")
         folder_path = "boards"
         if !isdir(folder_path)
             mkdir(folder_path)

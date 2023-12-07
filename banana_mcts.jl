@@ -51,14 +51,14 @@ bananagrams = QuickMDP(
 
     transition = function (s, a)
         if a === nothing   # draw tile from bunch and add to bank
-            sp = State(s.tiles, s.letter_bank, s.occupied, s.bunch)
+            sp = State(copy(s.tiles), copy(s.letter_bank), copy(s.occupied), copy(s.bunch))
             new_tile = rand(s.bunch)
             deleteat!(sp.bunch, findfirst(x->x==new_tile, sp.bunch))
             push!(sp.letter_bank, new_tile)
         else
             sp = play_on_board(a.partial_word, a.parent_index, a.direction, s)
         end
-        return sp
+        return Deterministic(sp)
     end,
 
     reward = function (s, a, sp)
@@ -115,7 +115,7 @@ function simulate!(π::MonteCarloTreeSearch, s, d=π.d)
         return π.U(π.𝒫, s)
     end
     a = explore(π, s)
-    sp = transition(𝒫, s, a)
+    sp = rand(transition(𝒫, s, a))
     r = reward(𝒫, s, a, sp)
     q = r + γ*simulate!(π, sp, d-1)
     N[(s,a)] += 1
@@ -143,7 +143,7 @@ function rand_rollout(𝒫::QuickMDP, s)
     𝒜, γ = actions(𝒫, s), discount(𝒫)
     num_actions = length(𝒜)
     a = 𝒜[rand(1:num_actions)]
-    sp = transition(𝒫, s, a)
+    sp = rand(transition(𝒫, s, a))
     r = reward(𝒫, s, a, sp)
     q = r + γ*rand_rollout(𝒫, sp)
     return q
@@ -153,23 +153,23 @@ function main()
     N = Dict{Tuple{State, Union{Action, Nothing}}, Int}()
     Q = Dict{Tuple{State, Union{Action, Nothing}}, Float64}()
     d = 5
-    m = 100
+    m = 10
     c = 100    # d, m, c values used in textbook example
 
     π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, rand_rollout)
 
-    s = init_state(dictionary, BUNCH_TOT)
+    s = rand(initialstate(π.𝒫))
+    see_board(s.tiles, s.letter_bank, save=true)
     println("initial state: ", s)
 
     while !isterminal(π.𝒫, s)
         println("MAIN state: ", s)
         a = π(s)   # action to take accord to MCTS
-        sp = transition(π.𝒫, s, a)
-        println(sp)
+        sp = rand(transition(π.𝒫, s, a))
+        println("MAIN next state: ", sp)
         s = sp
+        see_board(s.tiles, s.letter_bank, save=true)
     end
-
-    see_board(s.tiles, s.letter_bank, save=true)
 end
 
 main()
