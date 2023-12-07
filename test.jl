@@ -1,15 +1,7 @@
-module Bananagrams
-
 using Printf, Dates
 using Parameters, Multisets
 using Graphs, GraphPlot, Plots
 
-export Tile, State, Action
-export load_word_list, find_playable_word_list, play_on_board, init_state, is_terminal, see_board
-
-##############################
-# CUSTOM STRUCTS
-##############################
 mutable struct Tile
     letter::Char
     pos::Tuple{Int, Int}
@@ -32,12 +24,6 @@ struct Action
     direction::Symbol
 end
 
-
-##############################
-# HELPER FUNCTIONS
-##############################
-
-# Actual bananagrams game tile counts
 bananagrams_distribution = Dict(
     'A' => 13, 'B' => 3, 'C' => 3, 'D' => 6, 'E' => 18,
     'F' => 3, 'G' => 4, 'H' => 3, 'I' => 12, 'J' => 2,
@@ -77,6 +63,7 @@ function find_candidate_words(source_tile::Tile, letter_bank::Vector{Char}, dict
             push!(candidate_words, word)
         end
     end
+    println(candidate_words)
     return candidate_words
 end
 
@@ -97,7 +84,7 @@ function free_direction(tile::Tile, dir_symbol::Symbol, candidate::String, occup
         dx = 1
         dy = 0
     end
-
+    
     for distance in 1:length(candidate)
         x = tile.pos[1] + distance * dx
         y = tile.pos[2] + distance * dy
@@ -113,9 +100,15 @@ function free_direction(tile::Tile, dir_symbol::Symbol, candidate::String, occup
             x2 = x
             y2 = y - 1
         end
-
+        
+        println("x, y: ", x, ", ", y)
+        println("x1, y1: ", x1, ", ", y1)
+        println("x2, y2: ", x2, ", ", y2)
         if ((x, y) in occupied) || ((x1, y1) in occupied) || ((x2, y2) in occupied) # then collision
             return false
+        
+        println("distance: ", distance)
+        println("x+dx, y+dy: ", x+dx, ", ", y+dy)
         elseif (distance == length(candidate)-1) && ((x+dx, y+dy) in occupied) # special case: current board perfectly wraps (makes a U shape) around candidate word. then another adjacent spot for last letter is in the direction dir_symbol (next to the first/last letter)
             return false
         end
@@ -127,10 +120,16 @@ function check_no_collisions(tile::Tile, candidate::String, occupied::Set{Tuple{
     """
     Verifies that there are no collisions and that the word is readable left to right or top to bottom
     """
+    println(tile)
+    println(candidate)
     for (dir_symbol, dir_value) in (:up => tile.up, :down => tile.down, :left => tile.left, :right => tile.right)
+        println("dir_symbol: ", dir_symbol)
+        println("dir_value: ", dir_value)
         opposite = opposite_dir(dir_symbol)
         opposite_value = getfield(tile, opposite)
+        println("opposite_value: ", opposite_value)
         if (dir_value == 0) && (opposite_value == 0) && (free_direction(tile, dir_symbol, candidate, occupied))
+            println("FREE DIRECTION TRUE")
             # verify that the word will be read left to right, top to bottom
             if ((tile.letter == uppercase(last(candidate))) && ((dir_symbol == :up) || (dir_symbol == :left))) || ((tile.letter == uppercase(first(candidate))) && ((dir_symbol == :down) || (dir_symbol == :right)))
                 return (true, dir_symbol)
@@ -155,10 +154,33 @@ function construct_playable_word(candidate::String, tile::Tile, tiles::Vector{Ti
     return Action(partial_word, parent, direction)
 end
 
+function find_playable_word_list(tiles::Vector{Tile}, letter_bank::Vector{Char}, occupied::Set{Tuple{Int, Int}}, dictionary::Set{String}) ::Vector{Union{Action, Nothing}}
+    """
+    Outputs (partial) words that can be played along with their positions
+    """
+    playable_word_list = Vector{Union{Action, Nothing}}()
+    for tile in tiles
+        num_neighbors = count(n -> (n != 0), (tile.up, tile.down, tile.left, tile.right)) # if nonzero, then there is a neighbor in that direction
+        if num_neighbors < 3
+            candidate_words = find_candidate_words(tile, letter_bank, dictionary) # find possible candidate words that start/end with that letter tile
+            for candidate in candidate_words
+                candidate = uppercase(candidate)
+                no_collisions, direction = check_no_collisions(tile, candidate, occupied)
+                println("tile", tile)
+                println("candidate: ", candidate)
+                println("no collisions: ", no_collisions)
+                if no_collisions # then add that word the list of playable words
+                    playable_word = construct_playable_word(candidate, tile, tiles, direction)
+                    if isa(playable_word, Action)
+                        push!(playable_word_list, playable_word)
+                    end
+                end
+            end
+        end
+    end
+    return playable_word_list
+end
 
-##############################
-# EXPORTED FUNCTIONS
-##############################
 function load_word_list(file_path) ::Set{String}
     """
     Input: file path to list of 3000 most common English words
@@ -177,225 +199,6 @@ function load_word_list(file_path) ::Set{String}
         end
     end
     return valid_dictionary
-end
-
-function random_bunch_arr(num_tiles::Int=35) ::Vector{Char}
-    """ 
-    Creates an array of random chars using the frequency defined in bananagrams_distribution
-    Produces different result every time it's run
-    """
-    # Create a pool of letters
-    pool = [repeat([k], v) for (k, v) in bananagrams_distribution]
-    pool = collect(Iterators.flatten(pool))
-
-    # Randomly select 35 letters from the pool
-    chosen_letters = rand(pool, num_tiles)
-    sort!(chosen_letters)
-    return chosen_letters
-end
-
-function convert_bunch_type(bunch_arr::Vector{Char}; format::String="dict")
-    """ 
-    Make a random bunch represented as a dictionary with keys of all letters and their counts 
-    """
-    ASCII_zero = 64    # letter 'A' is 65
-
-    # make a dictionary with all the letters and fill with the ones drawn
-    bunch_dict = Dict{Char, Int}()
-    for i in 1:26
-        bunch_dict[Char(ASCII_zero+i)] = 0
-    end
-    for c in bunch_arr
-        bunch_dict[c] += 1
-    end
-
-    # different output formats
-    if format == "array"
-        return bunch_arr
-    elseif format == "string"
-        return join(bunch_arr)
-    elseif format == "dict"
-        return bunch_dict
-    else
-        println("Format must be array, string, or dict")
-        return
-    end
-end
-
-function find_playable_word_list(tiles::Vector{Tile}, letter_bank::Vector{Char}, occupied::Set{Tuple{Int, Int}}, dictionary::Set{String}) ::Vector{Union{Action, Nothing}}
-    """
-    Outputs (partial) words that can be played along with their positions
-    """
-    playable_word_list = Vector{Union{Action, Nothing}}()
-    for tile in tiles
-        num_neighbors = count(n -> (n != 0), (tile.up, tile.down, tile.left, tile.right)) # if nonzero, then there is a neighbor in that direction
-        if num_neighbors < 3
-            candidate_words = find_candidate_words(tile, letter_bank, dictionary) # find possible candidate words that start/end with that letter tile
-            for candidate in candidate_words
-                candidate = uppercase(candidate)
-                no_collisions, direction = check_no_collisions(tile, candidate, occupied)
-                if no_collisions # then add that word the list of playable words
-                    playable_word = construct_playable_word(candidate, tile, tiles, direction)
-                    if isa(playable_word, Action)
-                        push!(playable_word_list, playable_word)
-                    end
-                end
-            end
-        end
-    end
-    return playable_word_list
-end
-
-function play_on_board(partial_word::String, parent::Int, dir_symbol::Symbol, s::State)
-    """
-    Adds word to board, changing tiles, letter_bank, and occupied
-    Assumes that the letters of partial_word exist in letter_bank
-    """
-    tiles = deepcopy(s.tiles)
-    letter_bank = copy(s.letter_bank)
-    occupied = deepcopy(s.occupied)
-    bunch = copy(s.bunch)
-
-    prev = parent
-    for letter in partial_word
-        prev_tile = tiles[prev]
-
-        # decode relative position from prev tile
-        if dir_symbol == :up
-            dx = 0
-            dy = 1
-        elseif dir_symbol == :down
-            dx = 0
-            dy = -1
-        elseif dir_symbol == :left
-            dx = -1
-            dy = 0
-        else    # dir_symbol = right
-            dx = 1
-            dy = 0
-        end
-
-        # set absolute position
-        x = prev_tile.pos[1] + dx
-        y = prev_tile.pos[2] + dy
-
-        # make a tile and link the previous tile to it
-        curr_tile = Tile(letter, (x,y))
-        setproperty!(curr_tile, opposite_dir(dir_symbol), prev)
-
-        # add to tiles vector and mark space as occupied (play on board)
-        push!(tiles, curr_tile)
-        push!(occupied, (x, y))
-
-        # remove one instance of the letter from the bank
-        index_to_remove = findfirst(x -> x == curr_tile.letter, letter_bank)
-        if index_to_remove !== nothing
-            deleteat!(letter_bank, index_to_remove)
-        end
-
-        # link the current tile to the parent
-        curr = length(tiles)
-        setproperty!(prev_tile, dir_symbol, curr)
-
-        prev = curr
-    end
-    return State(tiles, letter_bank, occupied, bunch)
-end
-
-function init_board(bunch::Vector{Char}, valid_dictionary, num_tiles=10)
-    """ 
-    Create a num_tiles-letter crossword to start the game
-    Returns tiles, letter_bank, occupied
-    """
-    bunch_dict = convert_bunch_type(bunch, format="dict")
-
-    # Initialize
-    tiles = Vector{Tile}()
-    occupied = Set{Tuple{Int, Int}}()
-    letter_bank= Vector{Char}()
-
-    # Temporarily set letter_bank to reflect the entire bunch in order to use the functions
-    letter_bank = [k for (k, v) in bunch_dict if v > 0]
-
-    # Choose a random letter from the bunch and play it at (0, 0)
-    first_letter = rand(letter_bank)
-    println(first_letter)
-    new_tile = Tile(first_letter, (0, 0))
-    push!(tiles, new_tile)
-    push!(occupied, (0, 0))
-
-    # Remove one instance of the letter from the bank
-    index_to_remove = findfirst(x -> x == first_letter, letter_bank)
-    if index_to_remove !== nothing
-        deleteat!(letter_bank, index_to_remove)
-    end
-
-    # Until you have played num_tiles, play words
-    n = 1
-    playable_word = Action("", 1, :right)
-    while n < num_tiles
-        # Find playable words
-        playable_word_list = find_playable_word_list(tiles, letter_bank, occupied, valid_dictionary)
-        if isempty(playable_word_list)
-            println("no words found!")
-            return nothing, nothing, nothing, nothing
-        end
-
-        # Find a playable word that fits within num_tiles limit
-        for (i, word) in enumerate(playable_word_list)
-            playable_word = word
-            if (n+length(playable_word.partial_word) <= num_tiles)
-                break
-            elseif (n+length(playable_word.partial_word) > num_tiles && i==length(playable_word_list))
-                println("words too long!")
-                return nothing, nothing, nothing, nothing
-            end
-        end
-
-        # Play the partial word on the board
-        state = State(tiles, letter_bank, occupied, bunch)
-        sp = play_on_board(playable_word.partial_word, playable_word.parent_index, playable_word.direction, state)
-        tiles = sp.tiles
-        letter_bank = sp.letter_bank
-        occupied = sp.occupied
-        n += length(playable_word.partial_word)
-    end
-
-    # Remove all played letters from the bunch
-    for tile in tiles
-        bunch_dict[tile.letter] -= 1
-        deleteat!(bunch, findfirst(x->x==tile.letter, bunch))
-    end
-    # Reset the letter bank
-    empty!(letter_bank)
-
-    return tiles, letter_bank, occupied, bunch
-end
-
-function init_state(dictionary, BUNCH_TOT::Int=35, num_tiles=10)
-    bunch = random_bunch_arr(BUNCH_TOT)
-    bunch_dict = convert_bunch_type(bunch, format="dict")
-    tiles = nothing
-    bank = nothing
-    occupied = nothing
-    while true
-        tiles, bank, occupied, bunch = init_board(bunch, dictionary, num_tiles)
-        if !isnothing(tiles)
-            break
-        end
-        bunch = random_bunch_arr(BUNCH_TOT)
-        bunch_dict = convert_bunch_type(bunch, format="dict")
-    end
-    return State(tiles, bank, occupied, bunch)
-end
-
-function is_terminal(s::State, dictionary, BANK_MAX)
-    if length(find_playable_word_list(s.tiles, s.letter_bank, s.occupied, dictionary)) == 0
-        if length(s.letter_bank) == BANK_MAX || length(s.bunch) == 0
-            return true
-        end
-    end
-    return false
 end
 
 function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
@@ -476,5 +279,16 @@ function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
     end
 end
 
+dict_file = "3000_common_words.txt"
+dictionary = load_word_list(dict_file)
 
-end
+# state = State([Tile('V', (0, 0), 0, 2, 0, 6), Tile('O', (0, -1), 1, 3, 11, 0), Tile('I', (0, -2), 2, 4, 0, 0), Tile('C', (0, -3), 3, 5, 0, 9), Tile('E', (0, -4), 4, 0, 16, 0), Tile('A', (1, 0), 11, 0, 1, 7), Tile('R', (2, 0), 14, 0, 6, 8), Tile('Y', (3, 0), 13, 0, 7, 0), Tile('U', (1, -3), 0, 0, 4, 10), Tile('T', (2, -3), 0, 25, 9, 0)], ['R', 'N', 'A', 'T', 'E', 'B', 'O'], Set([(0, 0), (0, -2), (1, -3), (0, -1), (0, -3), (2, 0), (2, -3), (3, 0), (1, 0), (0, -4)]), ['A', 'D', 'E', 'E', 'E', 'G', 'G', 'H', 'I', 'I', 'I', 'I', 'L', 'N', 'N', 'N', 'O', 'Q', 'R', 'T', 'V', 'Z'])
+# words = find_playable_word_list(state.tiles, state.letter_bank, state.occupied, dictionary)
+
+# println("day" in dictionary)
+# println(state)
+# println(words)
+# see_board(state.tiles, state.letter_bank, save=true)
+
+check_no_collisions(Tile('Y', (3, 0), 13, 0, 7, 0), "boy", Set([(0, 0), (0, -2), (1, -3), (0, -1), (0, -3), (2, 0), (2, -3), (3, 0), (1, 0), (0, -4)]))
+
