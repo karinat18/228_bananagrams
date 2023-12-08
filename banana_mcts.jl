@@ -169,7 +169,7 @@ function main()
     π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, rand_rollout)
 
     s = rand(initialstate(π.𝒫))
-    see_board(s.tiles, s.letter_bank, save=true)
+    see_board(s.tiles, s.letter_bank, length(s.bunch), save=true)
     println("initial state: ", s)
 
     while !isterminal(π.𝒫, s)
@@ -178,7 +178,7 @@ function main()
         s = rand(transition(π.𝒫, s, a))
         # println("MAIN next state: ", s)
         # s = sp
-        see_board(s.tiles, s.letter_bank, save=true)
+        see_board(s.tiles, s.letter_bank, length(s.bunch), save=true)
     end
     println("final state: ", s)
 

@@ -329,6 +329,7 @@ function init_board(bunch::Vector{Char}, valid_dictionary, num_tiles=10)
     if index_to_remove !== nothing
         deleteat!(letter_bank, index_to_remove)
     end
+    bunch_dict[new_tile.letter] -= 1
 
     # Until you have played num_tiles, play words
     n = 1
@@ -366,6 +367,7 @@ function init_board(bunch::Vector{Char}, valid_dictionary, num_tiles=10)
         bunch_dict[tile.letter] -= 1
         deleteat!(bunch, findfirst(x->x==tile.letter, bunch))
     end
+    
     # Reset the letter bank
     empty!(letter_bank)
 
@@ -398,7 +400,7 @@ function is_terminal(s::State, dictionary, BANK_MAX)
     return false
 end
 
-function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
+function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}, bunch_size::Int; save=false)
     """
     Visualize (and save .png of) the board and letter bank
     """
@@ -460,7 +462,7 @@ function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}; save=false)
     ylims!(minimum(board_ys) - buffer, max_y + buffer)
 
     # Customize plot appearance (optional)
-    title!("Bananagrams Bank and Board")
+    title!("Bananagrams Bank and Board, Unseen Tiles: $bunch_size")
 
     # Display the plot
     display(Plots.plot!())  # Note: Plots.plot!() returns the current plot
