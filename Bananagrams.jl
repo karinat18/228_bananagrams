@@ -155,30 +155,6 @@ function construct_playable_word(candidate::String, tile::Tile, tiles::Vector{Ti
     return Action(partial_word, parent, direction)
 end
 
-
-##############################
-# EXPORTED FUNCTIONS
-##############################
-function load_word_list(file_path) ::Set{String}
-    """
-    Input: file path to list of 3000 most common English words
-    Output: words in the list that are 3-5 letters long
-    """
-    valid_dictionary = Set{String}()
-    open(file_path, "r") do file
-        for line in eachline(file)
-            words = split(line)
-            for word in words
-                word = strip(word)
-                if (3 <= length(word) <= 5) && islowercase(word[1])
-                    push!(valid_dictionary, word)
-                end
-            end
-        end
-    end
-    return valid_dictionary
-end
-
 function random_bunch_arr(num_tiles::Int=35) ::Vector{Char}
     """ 
     Creates an array of random chars using the frequency defined in bananagrams_distribution
@@ -220,6 +196,30 @@ function convert_bunch_type(bunch_arr::Vector{Char}; format::String="dict")
         println("Format must be array, string, or dict")
         return
     end
+end
+
+
+##############################
+# EXPORTED FUNCTIONS
+##############################
+function load_word_list(file_path) ::Set{String}
+    """
+    Input: file path to list of 3000 most common English words
+    Output: words in the list that are 3-5 letters long
+    """
+    valid_dictionary = Set{String}()
+    open(file_path, "r") do file
+        for line in eachline(file)
+            words = split(line)
+            for word in words
+                word = strip(word)
+                if (3 <= length(word) <= 5) && islowercase(word[1])
+                    push!(valid_dictionary, word)
+                end
+            end
+        end
+    end
+    return valid_dictionary
 end
 
 function find_playable_word_list(tiles::Vector{Tile}, letter_bank::Vector{Char}, occupied::Set{Tuple{Int, Int}}, dictionary::Set{String}) ::Vector{Union{Action, Nothing}}
@@ -319,7 +319,7 @@ function init_board(bunch::Vector{Char}, valid_dictionary, num_tiles=10)
 
     # Choose a random letter from the bunch and play it at (0, 0)
     first_letter = rand(letter_bank)
-    println(first_letter)
+    # println(first_letter)
     new_tile = Tile(first_letter, (0, 0))
     push!(tiles, new_tile)
     push!(occupied, (0, 0))
@@ -337,7 +337,7 @@ function init_board(bunch::Vector{Char}, valid_dictionary, num_tiles=10)
         # Find playable words
         playable_word_list = find_playable_word_list(tiles, letter_bank, occupied, valid_dictionary)
         if isempty(playable_word_list)
-            println("no words found!")
+            # println("no words found!")
             return nothing, nothing, nothing, nothing
         end
 
@@ -347,7 +347,7 @@ function init_board(bunch::Vector{Char}, valid_dictionary, num_tiles=10)
             if (n+length(playable_word.partial_word) <= num_tiles)
                 break
             elseif (n+length(playable_word.partial_word) > num_tiles && i==length(playable_word_list))
-                println("words too long!")
+                # println("words too long!")
                 return nothing, nothing, nothing, nothing
             end
         end
@@ -399,7 +399,7 @@ function is_terminal(s::State, dictionary, BANK_MAX)
     return false
 end
 
-function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}, bunch_size::Int; save=false)
+function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}, bunch_size::Int, folder_path; save=false)
     """
     Visualize (and save .png of) the board and letter bank
     """
@@ -468,14 +468,12 @@ function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}, bunch_size::I
 
     # Save the plot to a PNG file with a timestamp
     if save
-        timestamp = Dates.format(now(), "mmdd_HHMM_SS_SSS")
-        folder_path = "boards"
+        timestamp = Dates.format(now(), "mmdd_HHMM_SS_sss")
         if !isdir(folder_path)
-            mkdir(folder_path)
+            mkpath(folder_path)
         end
         savefig(joinpath(folder_path, "board_$timestamp.png"))
     end
 end
-
 
 end
