@@ -329,7 +329,6 @@ function init_board(bunch::Vector{Char}, valid_dictionary, num_tiles=10)
     if index_to_remove !== nothing
         deleteat!(letter_bank, index_to_remove)
     end
-    bunch_dict[new_tile.letter] -= 1
 
     # Until you have played num_tiles, play words
     n = 1
@@ -438,7 +437,7 @@ function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}, bunch_size::I
     markersize_pixels = markersize_in_units * min(x_pixels_per_unit, y_pixels_per_unit)
 
     # Plot (can add axis=([], false) to remove axis labels and grid)
-    scatter(board_xs, board_ys, ratio=1, label="",
+    scatter(board_xs, board_ys, ratio=1, label="", axis=([], false),
     shape=:square, markersize=markersize_pixels, color=:black)
     if has_bank
         scatter!(bank_xs, bank_ys, ratio=1, label="",
