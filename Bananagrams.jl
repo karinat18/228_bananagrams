@@ -442,7 +442,7 @@ function see_board(tiles::Vector{Tile}, letter_bank::Vector{Char}, bunch_size::I
     if has_bank
         scatter!(bank_xs, bank_ys, ratio=1, label="",
         shape=:square, markersize=markersize_pixels, color=:royalblue, markerstrokecolor=:royalblue)
-        plot!([minimum(board_xs)-buffer, max_x+buffer], [max_y-0.75, max_y-0.75], ls=:dash, lw=2, lc=:royalblue, legend=false)
+        plot!([minimum(board_xs)-buffer, max_x+buffer], [max_y-0.75, max_y-0.75], ls=:solid, lw=2, lc=:royalblue, legend=false)
     end
         plot!()
 
