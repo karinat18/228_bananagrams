@@ -1,18 +1,15 @@
-using Printf, Random
+using Printf, Dates, Random
 using POMDPs, POMDPTools
 using QuickPOMDPs: QuickMDP
 
 include("Bananagrams.jl")
 using .Bananagrams
 
-
 # Global variables
 dict_file = "3000_common_words.txt"
 dictionary = load_word_list(dict_file)
 BANK_MAX = 8
 BUNCH_TOT = 40
-bunch = random_bunch_arr(BUNCH_TOT)
-bunch_dict = convert_bunch_type(bunch, format="dict")
 
 # Reward values
 turn_penalty = -1
@@ -24,41 +21,36 @@ none_left_reward = 100
 bananagrams = QuickMDP(
     statetype = State,
     actiontype = Union{Action, Nothing},
-    # obstype = State,   # no obs in MDP, just to prevent getting a warning
     discount = 0.95,
 
     isterminal = function (s)
-        if length(find_playable_word_list(s.tiles, s.letter_bank, s.occupied, dictionary)) == 0
-            if length(s.letter_bank) == BANK_MAX || length(bunch) == 0
-                return True
-            end
-        end
-        return false
+        return is_terminal(s, dictionary, BANK_MAX)
     end,
 
     actions = function (s)
         actions = find_playable_word_list(s.tiles, s.letter_bank, s.occupied, dictionary)
-        if length(s.letter_bank) < BANK_MAX && length(bunch) > 0
+        if length(s.letter_bank) < BANK_MAX && length(s.bunch) > 0
             push!(actions, nothing)  # nothing = draw a tile
         end
         return actions
     end,
 
     transition = function (s, a)
-        if a == nothing   # draw tile from bunch and add to bank
-            tile = rand(bunch)
-            deleteat!(bunch, findfirst(x->x==tile, bunch))
-            push!(s.letter_bank, tile)
+        if a === nothing   # draw tile from bunch and add to bank
+            sp = State(deepcopy(s.tiles), copy(s.letter_bank), deepcopy(s.occupied), copy(s.bunch))
+            new_tile = rand(s.bunch)
+            deleteat!(sp.bunch, findfirst(x->x==new_tile, sp.bunch))
+            push!(sp.letter_bank, new_tile)
         else
-            play_on_board(a.partial_word, a.parent_index, a.direction, s.tiles, s.letter_bank, s.occupied)
+            sp = play_on_board(a.partial_word, a.parent_index, a.direction, s)
         end
-        return s
+        return Deterministic(sp)
     end,
 
     reward = function (s, a, sp)
         r = turn_penalty
-        if isterminal(sp)
-            num_leftover = length(bank) + length(bunch)
+        if is_terminal(sp, dictionary, BANK_MAX)
+            num_leftover = length(sp.letter_bank) + length(sp.bunch)
             if num_leftover == 0
                 r += none_left_reward
             else
@@ -68,7 +60,7 @@ bananagrams = QuickMDP(
         return r
     end,
 
-    initialstate = Deterministic(init_state(bunch_dict, dictionary, BUNCH_TOT)),
+    initialstate = Deterministic(init_state(dictionary, BUNCH_TOT)),
 )
 
 
@@ -93,19 +85,24 @@ end
 
 function simulate!(π::MonteCarloTreeSearch, s, d=π.d)
     if d <= 0
-        return π.U(s)
+        return π.U(π.𝒫, s)
     end
     𝒫, N, Q, c = π.𝒫, π.N, π.Q, π.c
     𝒜, γ = actions(𝒫, s), discount(𝒫)
+
+    if isterminal(𝒫, s)
+        return π.U(π.𝒫, s)
+    end
     if !haskey(N, (s, first(𝒜)))
         for a in 𝒜
             N[(s,a)] = 0
             Q[(s,a)] = 0.0
         end
-        return π.U(s)
+        return π.U(π.𝒫, s)
     end
+
     a = explore(π, s)
-    sp = transition(𝒫, s, a)
+    sp = rand(transition(𝒫, s, a))
     r = reward(𝒫, s, a, sp)
     q = r + γ*simulate!(π, sp, d-1)
     N[(s,a)] += 1
@@ -115,62 +112,50 @@ end
 
 function (π::MonteCarloTreeSearch)(s)
     for k in 1:π.m
+        print(k, " ")
         simulate!(π, s)
     end
+    println("")
     return argmax(a->π.Q[(s,a)], actions(π.𝒫, s))
 end
 
 # Value estimate from random rollout
-function U(s)
-    sim = RolloutSimulator(rng=Random.default_rng())
-    policy = RandomPolicy(bananagrams)             # generates actions at each state and randomly chooses one
-    return simulate(sim, bananagrams, policy, s)   # returns reward from rollout from state s; ends when isterminal is true
+function rand_rollout(𝒫::QuickMDP, s)
+    if isterminal(𝒫, s)
+        return 0
+    end
+    𝒜, γ = actions(𝒫, s), discount(𝒫)
+    num_actions = length(𝒜)
+    a = 𝒜[rand(1:num_actions)]
+    sp = rand(transition(𝒫, s, a))
+    r = reward(𝒫, s, a, sp)
+    q = r + γ*rand_rollout(𝒫, sp)
+    return q
 end
 
-N = Dict{Tuple{State, Union{Action, Nothing}}, Int}()
-Q = Dict{Tuple{State, Union{Action, Nothing}}, Float64}()
-d = 10
-m = 100
-c = 100    # d, m, c values used in textbook example
 
-π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, U)
+# Play the game
+function main()
+    N = Dict{Tuple{State, Union{Action, Nothing}}, Int}()
+    Q = Dict{Tuple{State, Union{Action, Nothing}}, Float64}()
+    d = 5
+    m = 5
+    c = 100
 
-init_tiles = Vector{Tile}()
-init_bank = Vector{Char}()
-init_occupied = Set{Tuple{Int, Int}}()
-while true
-    init_tiles, init_bank, init_occupied = init_board(bunch_dict, dictionary)
-    if !isnothing(init_tiles)
-        break
+    π = MonteCarloTreeSearch(bananagrams, N, Q, d, m, c, rand_rollout)
+
+    s = rand(initialstate(π.𝒫))
+    folder_path = "boards/" * Dates.format(now(), "mmdd_HHMM")
+    see_board(s.tiles, s.letter_bank, length(s.bunch), folder_path, save=true)
+
+    turn_count = 1
+    while !isterminal(π.𝒫, s)
+        println("Turn number: ", turn_count)
+        println("Simulation progress: ")
+        a = π(s)   # action to take accord to MCTS
+        s = rand(transition(π.𝒫, s, a))
+        see_board(s.tiles, s.letter_bank, length(s.bunch), folder_path, save=true)
+        turn_count += 1
     end
 end
-s = State(init_tiles, init_bank, init_occupied)
-while !isterminal(π.𝒫, s)
-    a = π(s)   # action to take accord to MCTS
-    transition(π.𝒫, s, a)
-end
-
-see_board(s.tiles, s.letter_bank, save=true)
-
-
-# # POMDPs API: https://juliapomdp.github.io/POMDPs.jl/latest/api/#API-Documentation
-# println("γ: ", discount(bananagrams))   # usage test
-# println("Bunch: ", bunch)
-
-# # Test board visualization: 
-# # NOTE: saving .png file works but board does not pop up when display() is called
-# my_tiles = Vector{Tile}()
-# S_tile = Tile('S', (1,3), 0, 4, 0, 2)
-# I_tile = Tile('I', (2,3), 0, 0, 1, 3)
-# T_tile = Tile('T', (3,3), 0, 0, 2, 0)
-# P_tile = Tile('P', (1,2), 1, 5, 0, 0)
-# A_tile = Tile('A', (1,1), 4, 0, 0, 0)
-# push!(my_tiles, S_tile)
-# push!(my_tiles, I_tile)
-# push!(my_tiles, T_tile)
-# push!(my_tiles, P_tile)
-# push!(my_tiles, A_tile)
-# occupied = Set{Tuple{Int, Int}}([(1,1), (1,2), (1,3), (2,3), (3,3)])
-# my_bank = ['C', 'R', 'T', 'S', 'A', 'G']
-# test_state = State(my_tiles, occupied, my_bank)
-# see_board(my_tiles, my_bank, save=true)
+main()
